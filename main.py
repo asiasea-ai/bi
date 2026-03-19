@@ -76,7 +76,7 @@ def parse_time_keywords(text: str):
         return now.replace(month=1, day=1).strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d"), "今年"
     return None, None, ""
 
-# 全局字段语义翻译字典（让英文字段名在图表中显示为人话，未知字段保持原样）
+# 全局字段语义翻译字典 (供图表动态渲染时转化为易读词汇)
 _FIELD_DICT = {
     "budgettotal": "总基数", "usedamount": "消耗额", "totalprice": "累计金额", "waithxprice": "待核销额",
     "budgetno": "业务单号", "applyusername": "申请人", "departmentname": "部门", 
@@ -86,7 +86,6 @@ def t_key(k: str) -> str:
     return _FIELD_DICT.get(str(k).lower(), str(k))
 
 def extract_generic_schema(datas: list) -> tuple:
-    """动态扫描 API JSON，自动提取最适合作为 KPI 的数字列和文本列"""
     if not datas: return [], []
     sample = datas[0]
     num_k, txt_k = [], []
@@ -97,15 +96,14 @@ def extract_generic_schema(datas: list) -> tuple:
             num_k.append(k)
         except (ValueError, TypeError):
             txt_k.append(k)
-    # 按常见度量关键词优先级排序数字列
     priority = ['total', 'amount', 'price', 'num']
     num_k.sort(key=lambda x: sum(1 for p in priority if p in x.lower()), reverse=True)
     return num_k[:2], txt_k[:4]
 
-# ==================== 后端 API (全链路严格注入 Auth) ====================
-def build_safe_headers(auth_pwd: str, ctx_headers: dict) -> dict:
-    """安全展开系统凭证，避免字典嵌套作为请求头"""
-    h = {"Content-Type": "application/json", "auth": auth_pwd}
+# ==================== 后端 API 桥接层 ====================
+def build_business_headers(ctx_headers: dict) -> dict:
+    """仅向业务系统透传 Token 等业务凭证，安全隔离 auth 密码"""
+    h = {"Content-Type": "application/json"}
     if isinstance(ctx_headers, dict):
         for k, v in ctx_headers.items():
             h[k] = str(v)
@@ -164,11 +162,9 @@ def generate_html_report(
     val_diff = val1 - val2
     used_pct = round(val2 / val1 * 100) if val1 > 0 else 0
     
-    # 将动态提取的键名也发给前端，让前端知道怎么画图
     config_payload = json.dumps({"url": api_url, "headers": headers_dict, "num_keys": num_keys, "txt_keys": txt_keys})
     config_b64 = base64.b64encode(config_payload.encode('utf-8')).decode('utf-8')
 
-    # 动态组装表格
     thead = "<tr>" + "".join([f"<th>{t_key(k)}</th>" for k in txt_keys]) + "".join([f"<th>{t_key(k)}</th>" for k in num_keys]) + "</tr>"
     tbody_rows = ""
     for r in table_rows[:50]:
@@ -278,7 +274,6 @@ async function doQuery() {{
 
   var h = CFG.headers; h['Content-Type'] = 'application/json';
   var u = new URL(CFG.url);
-  // 采用泛型 Payload：直接双管齐下传递不同格式的时间字段，由后端自行按需解析
   u.searchParams.append('method', 'ALL'); u.searchParams.append('pageNo', '1'); u.searchParams.append('pageSize', '50');
   u.searchParams.append('startTime', s); u.searchParams.append('endTime', e);
   u.searchParams.append('createStime', s); u.searchParams.append('createEtime', e);
@@ -291,7 +286,6 @@ async function doQuery() {{
     var datas = (d.data && d.data.datas) || [], nv1 = 0, nv2 = 0;
     var tb = document.getElementById('tbl_body'); tb.innerHTML = '';
     
-    // 完全动态的 JS 表格与数值装载
     datas.slice(0, 50).forEach(r => {{
       var v1 = CFG.num_keys.length > 0 ? parseFloat(r[CFG.num_keys[0]]||0) : 0;
       var v2 = CFG.num_keys.length > 1 ? parseFloat(r[CFG.num_keys[1]]||0) : 0;
@@ -318,7 +312,6 @@ async function doQuery() {{
 </body>
 </html>"""
 
-
 # ==================== OpenClaw 主入口 ====================
 def handle(command: str, args: list, **kwargs) -> str:
     user_id = kwargs.get("user_id", kwargs.get("sender_id", "default_user"))
@@ -337,9 +330,13 @@ def handle(command: str, args: list, **kwargs) -> str:
             if not systems: 
                 return "❌ 通信加密失败或网络异常，未获取到业务域。请检查密码是否正确，发送「初始化」重试。"
             
-            lines = ["🔐 **安全握手成功，大模型链路已就绪。**\n\n💡 **请指定要挂载的物理板块：**"]
+            lines = [
+                "🔐 **安全握手成功，大模型链路已就绪。**\n",
+                "💡 **请指定要挂载的物理板块：**"
+            ]
             for sys in systems: lines.append(f"- **{sys.get('system_name')}**")
             lines.append("\n*(提示：回复 切换系统 <板块名>)*")
+            lines.append("\n> 🛡️ *温馨提示：为了您的账号安全，建议您长按撤回刚才输入的密码消息。*")
             return "\n".join(lines)
         else:
             ctx["awaiting_password"] = True
@@ -373,12 +370,10 @@ def handle(command: str, args: list, **kwargs) -> str:
         auth_data = api_get_system_token(sys_id, pwd)
         if not auth_data: return f"❌ 越权阻断：「{target}」未能下发访问凭证。"
         
-        # 实时拉取并缓存系统的 API 路由表
         api_list = api_get_registry(sys_id, pwd)
         ctx.update({"system_name": target, "system_id": sys_id, "system_auth_headers": auth_data, "api_registry": api_list})
         save_session(user_id, ctx)
         
-        # 动态提取真实可用的指标用于提示，杜绝大模型猜词幻觉
         clean_names = [api.get("name", "").replace("查询", "").replace("列表", "").replace("接口文档", "").strip() for api in api_list]
         clean_names = [n for n in clean_names if n]
         sample = clean_names[0] if clean_names else "业务快照"
@@ -393,7 +388,6 @@ def handle(command: str, args: list, **kwargs) -> str:
         start_date, end_date, time_range = parse_time_keywords(full_text)
         if not start_date: return "⚠️ 请补充分析探针的**时间范围**（如：本月、上月、昨日）。"
 
-        # 动态遍历注册表，寻找匹配用户意图的 API
         target_api = None
         for api in ctx.get("api_registry", []):
             name_clean = api.get("name", "").replace("查询", "").replace("列表", "").replace("接口文档", "").strip()
@@ -401,27 +395,27 @@ def handle(command: str, args: list, **kwargs) -> str:
                 target_api = api
                 break
                 
-        # 兼容处理：如果没有精确命中，但包含核心关键词则智能降级匹配
-        if not target_api:
-            for api in ctx.get("api_registry", []):
-                path = api.get("path", "")
-                if "预算" in full_text and "yearBudget" in path: target_api = api; break
-                if "报销" in full_text and "bx" in path: target_api = api; break
-                
         if not target_api: 
-            return f"⚠️ 在【{system}】中未能语义对齐具体的业务指标，请使用更准确的业务词汇。"
+            # 列出可选项，杜绝用户或大模型猜词
+            avail = [a.get("name", "").replace("查询", "").replace("接口文档", "").strip() for a in ctx.get("api_registry", [])]
+            avail_str = "、".join(filter(None, avail))
+            return f"⚠️ 在【{system}】中未能匹配到您说的业务。目前系统支持分析的维度有：**{avail_str}**。请准确描述您的意图。"
 
         metric_label = target_api.get("name", "业务洞察").replace("接口文档", "")
         raw_path = target_api.get("path", "")
+        req_url = target_api.get("request_url", "")
         
-        # 动态处理接口域名
-        if raw_path.startswith("http"): api_url = raw_path
-        else: api_url = "https://e.asagroup.cn" + (raw_path if raw_path.startswith("/") else "/" + raw_path)
+        # 🚨 强安全校验：如果不是绝对路径，且没有下发 request_url 域名，则直接抛出报错拒绝猜测！
+        if raw_path.startswith("http"): 
+            api_url = raw_path
+        else: 
+            if not req_url:
+                return f"❌ 接口路由配置异常：网关未下发【{metric_label}】的请求根域名 (request_url)，系统拒绝执行存在安全隐患的调用链路，请联系管理员修复。"
+            api_url = req_url.rstrip("/") + "/" + raw_path.lstrip("/")
 
-        # 严格组装安全 Headers
-        headers = build_safe_headers(pwd, ctx.get("system_auth_headers", {}))
+        # 仅携带 token，绝对不带 auth 密码
+        headers = build_business_headers(ctx.get("system_auth_headers", {}))
         
-        # 使用“全覆盖”传参，应对后端可能存在的各种日期字段命名
         params = {
             "method": "ALL", "pageNo": 1, "pageSize": 50,
             "startTime": start_date, "endTime": end_date,
@@ -430,12 +424,22 @@ def handle(command: str, args: list, **kwargs) -> str:
 
         try:
             resp = requests.get(api_url, headers=headers, params=params, timeout=10).json()
+            
+            # 无感静默重连机制：拦截 Token 过期
+            if resp.get("code") in [401, 403, 40001] or any(k in str(resp.get("msg", "")).lower() for k in ["失效", "过期", "token", "unauthorized"]):
+                new_auth = api_get_system_token(ctx.get("system_id"), pwd)
+                if new_auth:
+                    ctx["system_auth_headers"] = new_auth
+                    save_session(user_id, ctx)
+                    headers = build_business_headers(new_auth)
+                    resp = requests.get(api_url, headers=headers, params=params, timeout=10).json()
+
             if resp.get("code") != 100000: return f"❌ 网关阻断：{resp.get('msg', '未知业务错')}"
             datas = resp.get("data", {}).get("datas", [])
         except Exception as e:
             return f"❌ 物理链路穿透失败，网关未响应。（{e}）"
 
-        # 核心泛化逻辑：根据返回的 JSON 自动推导结构
+        # 动态抽取数据结构
         num_keys, txt_keys = extract_generic_schema(datas)
         
         val1_key = num_keys[0] if len(num_keys) > 0 else ""
@@ -444,8 +448,8 @@ def handle(command: str, args: list, **kwargs) -> str:
         val1 = sum(safe_float(r.get(val1_key)) for r in datas) if val1_key else 0.0
         val2 = sum(safe_float(r.get(val2_key)) for r in datas) if val2_key else 0.0
         
-        val1_label = t_key(val1_key) if val1_key else "度量A"
-        val2_label = t_key(val2_key) if val2_key else "度量B"
+        val1_label = t_key(val1_key) if val1_key else "主度量值"
+        val2_label = t_key(val2_key) if val2_key else "副度量值"
 
         html = generate_html_report(
             system, metric_label, time_range, start_date, end_date,
@@ -459,7 +463,6 @@ def handle(command: str, args: list, **kwargs) -> str:
         ctx["last_report_title"] = f"{system} · {metric_label}"
         save_session(user_id, ctx)
 
-        # 严格根据实际数据产生执行建议
         used_pct = round(val2 / val1 * 100) if val1 > 0 else 0
         if not datas:
             advice = "⚪ **执行建议**：探针未能捕获到该周期的有效数据，建议扩大时间范围或核查上游流水。"
@@ -470,7 +473,7 @@ def handle(command: str, args: list, **kwargs) -> str:
         else:
             advice = f"🟢 **执行建议**：数据基盘稳定，核心转化率在合理区间（{used_pct}%），可保持现有资源释放节奏。"
 
-        # 严格控制输出排版，包含四大版块
+        # 任何 BI 分析意图，统一严格输出富文本大屏格式
         return (
             f"📊 **{ctx['last_report_title']} 空间计算完毕**\n\n"
             f"📋 **基础信息**\n"
