@@ -1,8 +1,16 @@
 {
   "name": "金灯塔BI",
-  "version": "1.0.1",
-  "description": "提供金灯塔BI系统的报表查询、系统切换和初始化功能。",
+  "version": "1.0.3",
+  "description": "提供金灯塔BI系统的报表查询（报销单、预算）、系统切换（E网/供应链系统）和初始化功能。",
   "repository": "asiasea-ai/bi",
   "language": "python",
-  "entry": "main.py"
+  "entry": "main.py",
+  "api_dependencies": [
+    "GET https://o.yayuit.cn/dw/api/auth/supported-systems",
+    "GET https://o.yayuit.cn/dw/api/system/api-registry",
+    "GET https://o.yayuit.cn/dw/api/auth/system-token",
+    "POST https://o.yayuit.cn/dw/api/skills/archive/upload",
+    "GET https://e.asagroup.cn/asae-e/bx",
+    "GET https://e.asagroup.cn/asae-e/yearBudget/query"
+  ]
 }
