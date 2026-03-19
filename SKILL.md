@@ -1,13 +1,13 @@
 ---
 name: 金灯塔胜算
-description: 飞书集成 BI 报表技能（OpenClaw 简化版），支持多系统切换与自然语言数据查询
+description: 飞书集成 BI 报表技能（OpenClaw），支持多系统切换与自然语言数据查询
 ---
 
-# 金灯塔胜算 Skill (OpenClaw 简化版)
+# 金灯塔胜算 Skill (OpenClaw)
 
 ## 描述
 
-本 skill 是金灯塔胜算业务系统的 OpenClaw 简化版本。基于 LLM 的意图识别与参数提取，支持用户通过完全无预设的**自然语言**来管理会话状态并查询 BI 数据报表。
+本 skill 是金灯塔胜算业务系统的 OpenClaw。基于 LLM 的意图识别与参数提取，支持用户通过完全无预设的**自然语言**来管理会话状态并查询 BI 数据报表。
 本插件采用无头工具（Headless Tool）架构，剥离了传统的固定格式指令，实现了真正的多用户并发状态隔离。
 
 ---
@@ -50,4 +50,4 @@ description: 飞书集成 BI 报表技能（OpenClaw 简化版），支持多系
 小灯胜算团队
 
 ## Version
-1.0.0 (OpenClaw 简化版)
+1.0.0 (OpenClaw)

@@ -1,4 +1,4 @@
-# 金灯塔胜算 Skill - OpenClaw 简化版
+# 金灯塔胜算 Skill - OpenClaw
 
 集成飞书与业务数据的 BI 报表插件。采用符合现代 Agent 框架标准的 Headless Tool 设计，依托 LLM 的自然语言解析能力提供数据支撑。
 
@@ -39,4 +39,4 @@ query_bi_data: 拉取业务数据报表
 小灯胜算团队
 
 ## Version
-1.0.0 (OpenClaw 简化版)
+1.0.0 (OpenClaw)
