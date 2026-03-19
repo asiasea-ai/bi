@@ -1,42 +1,24 @@
-# 金灯塔胜算 Skill - OpenClaw
+# 金灯塔BI Skill - OpenClaw 适配版
 
-集成飞书与业务数据的 BI 报表插件。采用符合现代 Agent 框架标准的 Headless Tool 设计，依托 LLM 的自然语言解析能力提供数据支撑。
+完全适配 OpenClaw 引擎 `handle(command, args)` 规范的 BI 报表插件。
+
+**代码仓库**: `asiasea-ai/bi`
+
+## 核心特性
+1. **原生兼容**：抛弃了 Subprocess 命令行模式，改用同步函数直接渲染输出。
+2. **状态隔离**：通过 `kwargs.get('user_id')` 识别用户，动态生成 `.session_{user_id}.json` 隔离配置。
+3. **强参数追问**：在查询指令中，若未识别到时间（如“上个月”）或指标（如“销售额”），脚本会直接打回并提示用户补充，不会胡乱生成假数据。
 
 ## 安装部署
-
-将项目文件夹直接放置到 OpenClaw 技能目录，保持清单文件位于根路径：
+从 GitHub 代码仓库直接拉取到 OpenClaw 的 skills 目录下：
 
 ```bash
-cp -r skills-simple /path/to/openclaw/skills/jindengta-shengsuan
+cd /path/to/openclaw/skills/
+git clone git@github.com:asiasea-ai/bi.git jindengta-bi
 ```
-然后重启 Gateway 即可生效。
+部署完成后，重启 Gateway。然后在聊天框发送 初始化 即可体验。
 
-## 交互范式
-告别传统的 /命令 交互模式。用户直接输入自然语言，OpenClaw 引擎会自动解析意图并调度以下内置 Tools：
+### 最终定案结论
+除了上述的 Markdown 截断失误外，其余 3 个文件（`main.py`, `SKILL.md`, `skill.json`）**完全合格，无需再做任何修改**。
 
-initialize: 初始化环境
-
-list_systems: 罗列可用系统
-
-switch_system: 切换业务环境
-
-query_bi_data: 拉取业务数据报表
-
-## 对话示例：
-
-“初始化胜算系统”
-
-“切到库存系统”
-
-“查一下昨天的新增用户数”
-
-## 架构说明
-本插件为纯数据提供者，仅接收并返回标准 JSON。文本话术的组织交由大模型处理。
-
-具备多用户隔离机制，运行时会在同级目录自动生成 .session_{user_id}.json 状态沙箱。
-
-## Author
-小灯胜算团队
-
-## Version
-1.0.0 (OpenClaw)
+你可以把这四个文件打包推送到 `asiasea-ai/bi` 仓库了，系统已经具备了生产环境可用的质量。

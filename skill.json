@@ -1,77 +1,8 @@
 {
-  "name": "金灯塔胜算",
-  "version": "1.0.0",
-  "description": "提供胜算系统的 BI 报表查询、系统切换和初始化功能。",
+  "name": "金灯塔BI",
+  "version": "1.0.1",
+  "description": "提供金灯塔BI系统的报表查询、系统切换和初始化功能。",
+  "repository": "asiasea-ai/bi",
   "language": "python",
-  "entry": "main.py",
-  "tools": [
-    {
-      "name": "initialize",
-      "description": "用户第一次使用或要求初始化时调用。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "description": "当前用户的唯一标识符"
-          }
-        },
-        "required": ["user_id"]
-      }
-    },
-    {
-      "name": "list_systems",
-      "description": "列出当前支持的所有业务系统。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "description": "当前用户的唯一标识符"
-          }
-        },
-        "required": ["user_id"]
-      }
-    },
-    {
-      "name": "switch_system",
-      "description": "切换当前查询的业务系统。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "description": "当前用户的唯一标识符"
-          },
-          "system_name": {
-            "type": "string",
-            "description": "要切换的系统名称，如'销售系统'"
-          }
-        },
-        "required": ["user_id", "system_name"]
-      }
-    },
-    {
-      "name": "query_bi_data",
-      "description": "查询 BI 数据报表（销售额、订单、趋势等）。必须包含明确的时间范围。",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "description": "当前用户的唯一标识符"
-          },
-          "metric": {
-            "type": "string",
-            "description": "查询的指标，例如：'销售额', '订单量', '库存'"
-          },
-          "time_range": {
-            "type": "string",
-            "description": "时间范围，例如：'上个月', '昨天', '最近7天'"
-          }
-        },
-        "required": ["user_id", "metric", "time_range"]
-      }
-    }
-  ]
+  "entry": "main.py"
 }
