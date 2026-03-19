@@ -14,6 +14,6 @@
 
 ```bash
 cd /path/to/openclaw/skills/
-git clone git@github.com:asiasea-ai/bi.git jindengta-bi
+git clone git@github.com:asiasea-ai/bi.git asiasea-bi
 ```
 部署完成后，重启 Gateway。然后在聊天框发送 初始化 即可体验。
