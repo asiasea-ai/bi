@@ -243,7 +243,7 @@ def handle(command: str, args: list, **kwargs) -> str:
         ctx["api_registry"] = []
         ctx["user_phone"] = "13800000000" 
         save_session(user_id, ctx)
-        return "✅ **金灯塔BI系统初始化完成**\n\n🔒 飞书授权成功，已绑定身份。\n\n💡 **请先选择您要进入的业务系统。**\n您可以输入「系统列表」查看支持的系统，然后回复「切换系统 E网」或「切换系统 供应链系统」进入对应环境。"
+        return "✅ **金灯塔BI系统初始化完成**\n\n🔒 飞书授权成功，已绑定身份。\n\n💡 **请先选择您要进入的业务系统。**\n您可以输入「系统列表」查看支持的系统，然后回复「切换系统 XX网」进入对应环境。"
 
     elif cmd == "系统列表":
         if not ctx.get("initialized"): return "⚠️ 权限未就绪，请先发送「初始化」。"
@@ -258,7 +258,7 @@ def handle(command: str, args: list, **kwargs) -> str:
 
     elif cmd.startswith("切换系统"):
         if not ctx.get("initialized"): return "⚠️ 权限未就绪，请先发送「初始化」。"
-        if not args: return "❌ 请指定要切换的系统，例如：`切换系统 E网`"
+        if not args: return "❌ 请指定要切换的系统，例如：`切换系统 XX网`"
         target_system_name = args[0]
         systems = api_get_supported_systems()
         target_sys = next((s for s in systems if s.get("system_name") == target_system_name), None)

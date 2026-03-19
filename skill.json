@@ -1,7 +1,7 @@
 {
   "name": "金灯塔BI",
   "version": "1.0.4",
-  "description": "提供金灯塔BI系统的报表查询（报销单、预算）、系统切换（E网/供应链系统）和初始化功能。本插件为无状态纯数据接口工具。",
+  "description": "基于大模型构建的无状态智能数据代理，提供多维业务环境的动态路由切换、语义化泛指标查询与端到端可视化快照生成功能。",
   "repository": "asiasea-ai/bi",
   "language": "python",
   "entry": "main.py",
