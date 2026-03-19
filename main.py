@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+====================================================================
+@Project : 金灯塔 BI Skill (OpenClaw Agent)
+@Company : Asiasea (asiasea-ai)
+@License : PROPRIETARY AND CONFIDENTIAL (参见 LICENSE 文件)
+@Warning : 
+  1. 本文件包含企业核心内部 API 结构，严禁发布至公共互联网。
+  2. 【安全红线】绝对禁止在生成的 HTML/JS 报表快照中注入或硬编码 
+     Token、AppCode 等鉴权信息。所有 API 请求必须在后端完成。
+====================================================================
+"""
 import json
 import os
 import datetime
@@ -37,6 +48,7 @@ def save_session(user_id: str, data: dict):
 
 # ==================== 时间解析引擎 ====================
 def parse_time_keywords(full_text: str):
+    """将自然语言时间转化为 YYYY-MM-DD 格式，供真实 API 调用"""
     now = datetime.datetime.now()
     start_date, end_date = None, None
     time_desc = ""
@@ -119,22 +131,23 @@ def api_upload_html_to_oss(html_content: str) -> str:
         pass 
     return ""
 
-# ==================== HTML 报表生成器 (包含前端真实查询交互) ====================
+# ==================== HTML 报表生成器 (安全静态快照) ====================
 def generate_html_report(system: str, metric: str, time_range: str, start_date: str, end_date: str, 
-                         val1_label: str, val1: float, val2_label: str, val2: float,
-                         api_url: str, headers_dict: dict) -> str:
+                         val1_label: str, val1: float, val2_label: str, val2: float) -> str:
+    """
+    🚨 安全警告：此函数生成的文件将上传至公网可读的 OSS。
+    绝对禁止在此 HTML 中注入任何系统 Token、AppCode 或业务 API 接口地址！
+    只允许渲染后端已经计算好的静态数值 (val1, val2)。
+    """
     echarts_script_url = "https://jindengta-archive.oss-cn-beijing.aliyuncs.com/theme/web/bi/echarts.min.js"
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # 将字典转为 JS 可以直接读取的格式
-    headers_json_str = json.dumps(headers_dict, ensure_ascii=False)
     
     html_content = f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{metric} 报表 - {system}</title>
+    <title>{metric} 快照 - {system}</title>
     <script src="{echarts_script_url}"></script>
     <style>
         :root {{ --primary: #5470c6; --bg: #f5f7fa; --card-bg: #ffffff; --text: #333333; --border: #ebeef5; }}
@@ -145,12 +158,8 @@ def generate_html_report(system: str, metric: str, time_range: str, start_date: 
         .header-area h1 {{ margin: 0 0 10px 0; font-size: 28px; color: #2c3e50; }}
         .header-area .meta-info {{ color: #606266; font-size: 14px; display: inline-flex; gap: 10px; align-items: center; }}
         .header-area .meta-info span {{ background: #e4e7ed; padding: 4px 12px; border-radius: 12px; font-weight: 500; }}
-        .filter-area {{ display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }}
-        .filter-item {{ display: flex; align-items: center; gap: 8px; font-size: 14px; }}
-        .filter-item input {{ padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; outline: none; }}
-        .btn-query {{ background: var(--primary); color: white; border: none; padding: 8px 24px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: opacity 0.2s; }}
-        .btn-query:hover {{ opacity: 0.8; }}
-        .btn-query:disabled {{ background: #a0cfff; cursor: not-allowed; }}
+        .filter-area {{ display: flex; gap: 15px; align-items: center; flex-wrap: wrap; background: #fff8e6; border-left: 4px solid #f5b041; padding: 15px; border-radius: 4px;}}
+        .filter-item label {{ font-weight: bold; font-size: 14px; color: #666; }}
         .bi-area {{ display: flex; flex-direction: column; gap: 20px; }}
         #chart {{ width: 100%; height: 400px; }}
         table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }}
@@ -164,23 +173,18 @@ def generate_html_report(system: str, metric: str, time_range: str, start_date: 
 <body>
     <div class="container">
         <div class="card header-area">
-            <h1>{metric} 报表</h1>
+            <h1>{metric} 数据快照</h1>
             <div class="meta-info">
                 <span>💻 {system}</span>
-                <span id="header_time">📅 {time_range}</span>
+                <span>📅 {time_range}</span>
             </div>
         </div>
         
-        <div class="card filter-area">
+        <div class="filter-area">
             <div class="filter-item">
-                <label>开始时间:</label>
-                <input type="date" id="startDate" value="{start_date}" />
+                <label>📌 快照参数说明：</label>
+                <span>本报表生成于 {current_time}，数据统计范围为 <strong>{start_date} 至 {end_date}</strong>。如需按其他时间范围查询，请返回聊天框重新下达指令（例如：“查询上个月的{metric}”）。</span>
             </div>
-            <div class="filter-item">
-                <label>结束时间:</label>
-                <input type="date" id="endDate" value="{end_date}" />
-            </div>
-            <button id="queryBtn" class="btn-query" onclick="refreshData()">重新查询</button>
         </div>
         
         <div class="bi-area">
@@ -189,8 +193,8 @@ def generate_html_report(system: str, metric: str, time_range: str, start_date: 
                 <table>
                     <thead><tr><th>数据维度</th><th>数值 (元)</th></tr></thead>
                     <tbody>
-                        <tr><td>{val1_label}</td><td id="val1_td">{val1:,.2f}</td></tr>
-                        <tr><td>{val2_label}</td><td id="val2_td">{val2:,.2f}</td></tr>
+                        <tr><td>{val1_label}</td><td>{val1:,.2f}</td></tr>
+                        <tr><td>{val2_label}</td><td>{val2:,.2f}</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -199,107 +203,25 @@ def generate_html_report(system: str, metric: str, time_range: str, start_date: 
         <div class="card summary-area">
             <h3>📝 智能数据总结</h3>
             <div class="summary-content">
-                在【<span id="summary_time">{start_date} 到 {end_date}</span>】内，{system}的{metric}核心指标显示：{val1_label} 为 <strong id="summary_v1">{val1:,.2f}</strong>，{val2_label} 为 <strong id="summary_v2">{val2:,.2f}</strong>。
+                在【{start_date} 到 {end_date}】内，{system}的{metric}核心指标显示：{val1_label} 为 <strong>{val1:,.2f}</strong>，{val2_label} 为 <strong>{val2:,.2f}</strong>。
             </div>
             <div class="footer-meta">
-                <span>导出时间：{current_time}</span>
-                <span>数据来源：金灯塔 BI 核心引擎 (真实 API 快照)</span>
+                <span>快照导出时间：{current_time}</span>
+                <span>数据来源：金灯塔 BI 核心引擎</span>
             </div>
         </div>
     </div>
     
     <script>
-        // ECharts 初始化
+        // ECharts 仅作纯静态图表渲染，不包含任何数据请求
         var myChart = echarts.init(document.getElementById('chart'));
-        
-        function updateChart(v1, v2) {{
-            myChart.setOption({{
-                tooltip: {{ trigger: 'axis' }},
-                xAxis: {{ type: 'category', data: ['{val1_label}', '{val2_label}'] }},
-                yAxis: {{ type: 'value' }},
-                series: [{{ data: [v1, v2], type: 'bar', barWidth: '40%', itemStyle: {{ color: '#5470c6', borderRadius: [4, 4, 0, 0] }}, label: {{ show: true, position: 'top' }} }}]
-            }});
-        }}
-        
-        // 初始渲染
-        updateChart({val1}, {val2});
+        myChart.setOption({{
+            tooltip: {{ trigger: 'axis' }},
+            xAxis: {{ type: 'category', data: ['{val1_label}', '{val2_label}'] }},
+            yAxis: {{ type: 'value' }},
+            series: [{{ data: [{val1}, {val2}], type: 'bar', barWidth: '40%', itemStyle: {{ color: '#5470c6', borderRadius: [4, 4, 0, 0] }}, label: {{ show: true, position: 'top' }} }}]
+        }});
         window.addEventListener('resize', function() {{ myChart.resize(); }});
-
-        // 真实业务 API 调用逻辑
-        async function refreshData() {{
-            const start = document.getElementById('startDate').value;
-            const end = document.getElementById('endDate').value;
-            if(!start || !end) {{ alert('请选择完整的起止时间'); return; }}
-
-            const btn = document.getElementById('queryBtn');
-            btn.innerText = '查询中...';
-            btn.disabled = true;
-
-            const metricType = '{metric}';
-            const apiUrl = '{api_url}';
-            
-            // 注入后端的真实鉴权 Header
-            const headers = {headers_json_str};
-            headers['Content-Type'] = 'application/json';
-
-            // 构造请求参数
-            let url = new URL(apiUrl);
-            url.searchParams.append('method', 'ALL');
-            url.searchParams.append('pageNo', '1');
-            url.searchParams.append('pageSize', '25');
-
-            if (metricType === '部门周期预算') {{
-                url.searchParams.append('startTime', start);
-                url.searchParams.append('endTime', end);
-            }} else {{
-                url.searchParams.append('createStime', start);
-                url.searchParams.append('createEtime', end);
-            }}
-
-            try {{
-                const response = await fetch(url, {{ method: 'GET', headers: headers }});
-                const res = await response.json();
-                
-                if (res.code === 100000) {{
-                    const datas = (res.data && res.data.datas) ? res.data.datas : [];
-                    let v1 = 0, v2 = 0;
-                    
-                    // 根据不同的业务指标提取数据
-                    if (metricType === '部门周期预算') {{
-                        datas.forEach(item => {{
-                            v1 += parseFloat(item.budgetTotal || 0);
-                            v2 += parseFloat(item.usedAmount || 0);
-                        }});
-                    }} else {{
-                        datas.forEach(item => {{
-                            v1 += parseFloat(item.totalprice || 0);
-                            v2 += parseFloat(item.waitHxPrice || 0);
-                        }});
-                    }}
-
-                    // 更新 UI 数值
-                    const formatNum = (num) => num.toLocaleString('en-US', {{minimumFractionDigits: 2, maximumFractionDigits: 2}});
-                    
-                    document.getElementById('val1_td').innerText = formatNum(v1);
-                    document.getElementById('val2_td').innerText = formatNum(v2);
-                    document.getElementById('summary_v1').innerText = formatNum(v1);
-                    document.getElementById('summary_v2').innerText = formatNum(v2);
-                    document.getElementById('header_time').innerText = `📅 ${{start}} 至 ${{end}}`;
-                    document.getElementById('summary_time').innerText = `${{start}} 到 ${{end}}`;
-                    
-                    // 更新图表
-                    updateChart(v1, v2);
-
-                }} else {{
-                    alert('查询失败: ' + (res.msg || '未知错误'));
-                }}
-            }} catch(e) {{
-                alert('接口请求异常: ' + e.message);
-            }} finally {{
-                btn.innerText = '重新查询';
-                btn.disabled = false;
-            }}
-        }}
     </script>
 </body>
 </html>"""
@@ -369,7 +291,6 @@ def handle(command: str, args: list, **kwargs) -> str:
         metric = ""
         val1, val2 = 0.0, 0.0
         val1_label, val2_label = "", ""
-        api_url = ""
         
         try:
             if "预算" in full_text: 
@@ -405,10 +326,9 @@ def handle(command: str, args: list, **kwargs) -> str:
         except Exception as e:
             return f"❌ 业务接口请求发生严重异常，请检查网络或联系管理员排查。详细错误信息：{str(e)}"
 
-        # 生成带有真实 JS Fetch 交互的 HTML
+        # 🚨 安全渲染：只传递纯净的静态数值，不再传递任何包含 Token 的 Headers 或 API 地址
         html_content = generate_html_report(system, metric, time_range, start_date, end_date, 
-                                            val1_label, val1, val2_label, val2, 
-                                            api_url, ctx.get("system_auth_headers", {}))
+                                            val1_label, val1, val2_label, val2)
         
         real_preview_url = api_upload_html_to_oss(html_content)
         
@@ -416,7 +336,7 @@ def handle(command: str, args: list, **kwargs) -> str:
              return "❌ 业务数据抓取成功，但渲染报表并上传至 OSS 存储库失败，操作已中止。"
         
         ctx["last_report_url"] = real_preview_url
-        ctx["last_report_title"] = f"{system} - {metric} 报表"
+        ctx["last_report_title"] = f"{system} - {metric} 报表快照"
         save_session(user_id, ctx)
 
         return f"""📊 **{ctx["last_report_title"]}**
@@ -425,16 +345,16 @@ def handle(command: str, args: list, **kwargs) -> str:
 - {val1_label}：{val1:,.2f}
 - {val2_label}：{val2:,.2f}
 
-🔗 **完整可视化报表**：[点击查看并自主筛选]({real_preview_url})
+🔗 **完整可视化快照**：[点击查看]({real_preview_url})
 
-💡 *您可以回复「发布」将此快照固化至系统。*"""
+💡 *您可以回复「发布」将此快照固化至系统。如需更改时间，请直接对我下达新指令（如"查询上个月的报销单"）。*"""
 
     elif any(kw in cmd for kw in ["发布", "保存"]):
         if not ctx.get("initialized"): return "⚠️ 请先发送「初始化」。"
-        if not ctx.get("last_report_url"): return "⚠️ 当前没有可发布的报表，请先查询生成一份报表。"
+        if not ctx.get("last_report_url"): return "⚠️ 当前没有可发布的快照，请先查询生成一份快照。"
         
         publish_url = ctx.get("last_report_url").replace(".html", "_published.html")
-        return f"✅ **发布成功**\n\n报表快照《{ctx.get('last_report_title')}》已持久化保存至胜算平台。\n🔗 正式访问链接：{publish_url}"
+        return f"✅ **发布成功**\n\n快照《{ctx.get('last_report_title')}》已持久化保存至胜算平台。\n🔗 正式访问链接：{publish_url}"
 
     else:
         return f"收到未识别的指令。您可以尝试发送「初始化」、「查询本月报销单」或「系统列表」。"
