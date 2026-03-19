@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 import json
 import os
-import uuid
 import datetime
 import requests
 
@@ -26,7 +25,7 @@ def load_session(user_id: str) -> dict:
         "user_phone": None,
         "system_name": None,
         "system_id": None,
-        "system_auth_headers": {},  # 改为字典，存储所有动态下发的鉴权字段
+        "system_auth_headers": {},  
         "api_registry": [],
         "last_report_url": None,
         "last_report_title": None
@@ -36,9 +35,50 @@ def save_session(user_id: str, data: dict):
     with open(get_session_file(user_id), "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+# ==================== 时间解析引擎 ====================
+def parse_time_keywords(full_text: str):
+    now = datetime.datetime.now()
+    start_date, end_date = None, None
+    time_desc = ""
+
+    if "本月" in full_text:
+        start_date = now.replace(day=1).strftime("%Y-%m-%d")
+        end_date = now.strftime("%Y-%m-%d")
+        time_desc = "本月"
+    elif "上个月" in full_text or "上月" in full_text:
+        first_day_this_month = now.replace(day=1)
+        last_day_last_month = first_day_this_month - datetime.timedelta(days=1)
+        start_date = last_day_last_month.replace(day=1).strftime("%Y-%m-%d")
+        end_date = last_day_last_month.strftime("%Y-%m-%d")
+        time_desc = "上个月"
+    elif "昨天" in full_text or "昨日" in full_text:
+        yesterday = now - datetime.timedelta(days=1)
+        start_date = yesterday.strftime("%Y-%m-%d")
+        end_date = start_date
+        time_desc = "昨天"
+    elif "今天" in full_text or "今日" in full_text:
+        start_date = now.strftime("%Y-%m-%d")
+        end_date = start_date
+        time_desc = "今天"
+    elif "本周" in full_text:
+        start_date = (now - datetime.timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+        end_date = now.strftime("%Y-%m-%d")
+        time_desc = "本周"
+    elif "上周" in full_text:
+        last_sunday = now - datetime.timedelta(days=now.weekday() + 1)
+        last_monday = last_sunday - datetime.timedelta(days=6)
+        start_date = last_monday.strftime("%Y-%m-%d")
+        end_date = last_sunday.strftime("%Y-%m-%d")
+        time_desc = "上周"
+    elif "今年" in full_text or "本年" in full_text:
+        start_date = now.replace(month=1, day=1).strftime("%Y-%m-%d")
+        end_date = now.strftime("%Y-%m-%d")
+        time_desc = "今年"
+
+    return start_date, end_date, time_desc
+
 # ==================== 真实 API 交互工具箱 ====================
 def api_get_supported_systems() -> list:
-    """真实接口：获取支持的系统列表"""
     url = "https://o.yayuit.cn/dw/api/auth/supported-systems"
     try:
         resp = requests.get(url, timeout=5).json()
@@ -49,7 +89,6 @@ def api_get_supported_systems() -> list:
     return []
 
 def api_get_registry(system_id: int) -> list:
-    """真实接口：获取对应系统的动态 API 注册表"""
     url = f"https://o.yayuit.cn/dw/api/system/api-registry?system_id={system_id}"
     try:
         resp = requests.get(url, timeout=5).json()
@@ -60,33 +99,35 @@ def api_get_registry(system_id: int) -> list:
     return []
 
 def api_get_system_token(system_id: int) -> dict:
-    """真实接口：动态获取目标系统的全量访问凭证（Token, app_code 等）"""
     url = f"https://o.yayuit.cn/dw/api/auth/system-token?system_id={system_id}"
     try:
         resp = requests.get(url, timeout=5).json()
         if resp.get("code") == 100000:
-            # 返回整个 data 字典，而不再仅仅是一个 token 字符串
             return resp.get("result", {}).get("data", {})
     except Exception as e:
         print(f"获取系统鉴权凭证失败: {e}")
     return {}
 
 def api_upload_html_to_oss(html_content: str) -> str:
-    """真实接口：将生成的 HTML 字符串上传至 OSS"""
     url = "https://o.yayuit.cn/dw/api/skills/archive/upload"
     files = {'file': ('bi_report.html', html_content.encode('utf-8'), 'text/html')}
     try:
         resp = requests.post(url, files=files, timeout=10).json()
         if resp.get("code") == 100000:
             return resp.get("result", {}).get("preview_url")
-    except Exception as e:
-        print(f"OSS文件上传失败: {e}")
+    except Exception:
+        pass 
     return ""
 
-# ==================== HTML 报表生成器 ====================
-def generate_html_report(system: str, metric: str, time_range: str, val1_label: str, val1: float, val2_label: str, val2: float) -> str:
+# ==================== HTML 报表生成器 (包含前端真实查询交互) ====================
+def generate_html_report(system: str, metric: str, time_range: str, start_date: str, end_date: str, 
+                         val1_label: str, val1: float, val2_label: str, val2: float,
+                         api_url: str, headers_dict: dict) -> str:
     echarts_script_url = "https://jindengta-archive.oss-cn-beijing.aliyuncs.com/theme/web/bi/echarts.min.js"
     current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # 将字典转为 JS 可以直接读取的格式
+    headers_json_str = json.dumps(headers_dict, ensure_ascii=False)
     
     html_content = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -106,11 +147,12 @@ def generate_html_report(system: str, metric: str, time_range: str, val1_label: 
         .header-area .meta-info span {{ background: #e4e7ed; padding: 4px 12px; border-radius: 12px; font-weight: 500; }}
         .filter-area {{ display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }}
         .filter-item {{ display: flex; align-items: center; gap: 8px; font-size: 14px; }}
-        .filter-item input, .filter-item select {{ padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; outline: none; }}
-        .btn-query {{ background: var(--primary); color: white; border: none; padding: 8px 24px; border-radius: 4px; cursor: pointer; font-weight: bold; }}
+        .filter-item input {{ padding: 6px 12px; border: 1px solid var(--border); border-radius: 4px; outline: none; }}
+        .btn-query {{ background: var(--primary); color: white; border: none; padding: 8px 24px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: opacity 0.2s; }}
+        .btn-query:hover {{ opacity: 0.8; }}
+        .btn-query:disabled {{ background: #a0cfff; cursor: not-allowed; }}
         .bi-area {{ display: flex; flex-direction: column; gap: 20px; }}
         #chart {{ width: 100%; height: 400px; }}
-        .table-wrapper {{ overflow-x: auto; }}
         table {{ width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }}
         th, td {{ padding: 12px 15px; border-bottom: 1px solid var(--border); }}
         th {{ background-color: #f8f9fa; font-weight: 600; color: #909399; }}
@@ -125,48 +167,139 @@ def generate_html_report(system: str, metric: str, time_range: str, val1_label: 
             <h1>{metric} 报表</h1>
             <div class="meta-info">
                 <span>💻 {system}</span>
-                <span>📅 {time_range}</span>
+                <span id="header_time">📅 {time_range}</span>
             </div>
         </div>
+        
         <div class="card filter-area">
             <div class="filter-item">
-                <label>时间范围:</label>
-                <input type="text" value="{time_range}" readonly />
+                <label>开始时间:</label>
+                <input type="date" id="startDate" value="{start_date}" />
             </div>
-            <button class="btn-query" onclick="alert('触发接口重载数据...')">查 询</button>
+            <div class="filter-item">
+                <label>结束时间:</label>
+                <input type="date" id="endDate" value="{end_date}" />
+            </div>
+            <button id="queryBtn" class="btn-query" onclick="refreshData()">重新查询</button>
         </div>
+        
         <div class="bi-area">
             <div class="card"><div id="chart"></div></div>
-            <div class="card table-wrapper">
+            <div class="card">
                 <table>
                     <thead><tr><th>数据维度</th><th>数值 (元)</th></tr></thead>
                     <tbody>
-                        <tr><td>{val1_label}</td><td>{val1:,.2f}</td></tr>
-                        <tr><td>{val2_label}</td><td>{val2:,.2f}</td></tr>
+                        <tr><td>{val1_label}</td><td id="val1_td">{val1:,.2f}</td></tr>
+                        <tr><td>{val2_label}</td><td id="val2_td">{val2:,.2f}</td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
+        
         <div class="card summary-area">
             <h3>📝 智能数据总结</h3>
             <div class="summary-content">
-                在【{time_range}】内，{system}的{metric}核心指标显示：{val1_label} 为 <strong>{val1:,.2f}</strong>，{val2_label} 为 <strong>{val2:,.2f}</strong>。
+                在【<span id="summary_time">{start_date} 到 {end_date}</span>】内，{system}的{metric}核心指标显示：{val1_label} 为 <strong id="summary_v1">{val1:,.2f}</strong>，{val2_label} 为 <strong id="summary_v2">{val2:,.2f}</strong>。
             </div>
             <div class="footer-meta">
-                <span>生成时间：{current_time}</span>
-                <span>数据来源：金灯塔 BI 核心引擎 (API 同步)</span>
+                <span>导出时间：{current_time}</span>
+                <span>数据来源：金灯塔 BI 核心引擎 (真实 API 快照)</span>
             </div>
         </div>
     </div>
+    
     <script>
+        // ECharts 初始化
         var myChart = echarts.init(document.getElementById('chart'));
-        myChart.setOption({{
-            tooltip: {{ trigger: 'axis' }},
-            xAxis: {{ type: 'category', data: ['{val1_label}', '{val2_label}'] }},
-            yAxis: {{ type: 'value' }},
-            series: [{{ data: [{val1}, {val2}], type: 'bar', barWidth: '40%', itemStyle: {{ color: '#5470c6', borderRadius: [4, 4, 0, 0] }}, label: {{ show: true, position: 'top' }} }}]
-        }});
+        
+        function updateChart(v1, v2) {{
+            myChart.setOption({{
+                tooltip: {{ trigger: 'axis' }},
+                xAxis: {{ type: 'category', data: ['{val1_label}', '{val2_label}'] }},
+                yAxis: {{ type: 'value' }},
+                series: [{{ data: [v1, v2], type: 'bar', barWidth: '40%', itemStyle: {{ color: '#5470c6', borderRadius: [4, 4, 0, 0] }}, label: {{ show: true, position: 'top' }} }}]
+            }});
+        }}
+        
+        // 初始渲染
+        updateChart({val1}, {val2});
         window.addEventListener('resize', function() {{ myChart.resize(); }});
+
+        // 真实业务 API 调用逻辑
+        async function refreshData() {{
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+            if(!start || !end) {{ alert('请选择完整的起止时间'); return; }}
+
+            const btn = document.getElementById('queryBtn');
+            btn.innerText = '查询中...';
+            btn.disabled = true;
+
+            const metricType = '{metric}';
+            const apiUrl = '{api_url}';
+            
+            // 注入后端的真实鉴权 Header
+            const headers = {headers_json_str};
+            headers['Content-Type'] = 'application/json';
+
+            // 构造请求参数
+            let url = new URL(apiUrl);
+            url.searchParams.append('method', 'ALL');
+            url.searchParams.append('pageNo', '1');
+            url.searchParams.append('pageSize', '25');
+
+            if (metricType === '部门周期预算') {{
+                url.searchParams.append('startTime', start);
+                url.searchParams.append('endTime', end);
+            }} else {{
+                url.searchParams.append('createStime', start);
+                url.searchParams.append('createEtime', end);
+            }}
+
+            try {{
+                const response = await fetch(url, {{ method: 'GET', headers: headers }});
+                const res = await response.json();
+                
+                if (res.code === 100000) {{
+                    const datas = (res.data && res.data.datas) ? res.data.datas : [];
+                    let v1 = 0, v2 = 0;
+                    
+                    // 根据不同的业务指标提取数据
+                    if (metricType === '部门周期预算') {{
+                        datas.forEach(item => {{
+                            v1 += parseFloat(item.budgetTotal || 0);
+                            v2 += parseFloat(item.usedAmount || 0);
+                        }});
+                    }} else {{
+                        datas.forEach(item => {{
+                            v1 += parseFloat(item.totalprice || 0);
+                            v2 += parseFloat(item.waitHxPrice || 0);
+                        }});
+                    }}
+
+                    // 更新 UI 数值
+                    const formatNum = (num) => num.toLocaleString('en-US', {{minimumFractionDigits: 2, maximumFractionDigits: 2}});
+                    
+                    document.getElementById('val1_td').innerText = formatNum(v1);
+                    document.getElementById('val2_td').innerText = formatNum(v2);
+                    document.getElementById('summary_v1').innerText = formatNum(v1);
+                    document.getElementById('summary_v2').innerText = formatNum(v2);
+                    document.getElementById('header_time').innerText = `📅 ${{start}} 至 ${{end}}`;
+                    document.getElementById('summary_time').innerText = `${{start}} 到 ${{end}}`;
+                    
+                    // 更新图表
+                    updateChart(v1, v2);
+
+                }} else {{
+                    alert('查询失败: ' + (res.msg || '未知错误'));
+                }}
+            }} catch(e) {{
+                alert('接口请求异常: ' + e.message);
+            }} finally {{
+                btn.innerText = '重新查询';
+                btn.disabled = false;
+            }}
+        }}
     </script>
 </body>
 </html>"""
@@ -180,91 +313,70 @@ def handle(command: str, args: list, **kwargs) -> str:
     cmd = command.strip().lstrip('/')
     full_text = cmd + " " + " ".join(args)
 
-    # 1. 路由：初始化
     if cmd in ["金灯塔BI 初始化", "初始化"]:
         ctx["initialized"] = True
         ctx["system_name"] = None
         ctx["system_id"] = None
-        ctx["system_auth_headers"] = {}  # 初始化时清空凭证
+        ctx["system_auth_headers"] = {}  
         ctx["api_registry"] = []
         ctx["user_phone"] = "13800000000" 
         save_session(user_id, ctx)
         return "✅ **金灯塔BI系统初始化完成**\n\n🔒 飞书授权成功，已绑定身份。\n\n💡 **请先选择您要进入的业务系统。**\n您可以输入「系统列表」查看支持的系统，然后回复「切换系统 E网」或「切换系统 供应链系统」进入对应环境。"
 
-    # 2. 路由：系统列表
     elif cmd == "系统列表":
         if not ctx.get("initialized"): return "⚠️ 权限未就绪，请先发送「初始化」。"
-        
         systems = api_get_supported_systems()
-        if not systems:
-            return "❌ 系统列表获取失败，请检查网络或联系管理员。"
-            
+        if not systems: return "❌ 系统列表获取失败，请检查网络或联系管理员。"
         curr = ctx.get("system_name")
         lines = ["📋 **支持的业务系统：**"]
         for sys in systems:
-            sys_name = sys.get("system_name")
-            sys_id = sys.get("id")
-            mark = "✅" if curr == sys_name else ""
-            lines.append(f"- {sys_name} (ID:{sys_id}) {mark}")
+            mark = "✅" if curr == sys.get("system_name") else ""
+            lines.append(f"- {sys.get('system_name')} (ID:{sys.get('id')}) {mark}")
         return "\n".join(lines)
 
-    # 3. 路由：切换系统 (获取全量鉴权凭证)
     elif cmd.startswith("切换系统"):
         if not ctx.get("initialized"): return "⚠️ 权限未就绪，请先发送「初始化」。"
         if not args: return "❌ 请指定要切换的系统，例如：`切换系统 E网`"
         target_system_name = args[0]
-        
         systems = api_get_supported_systems()
         target_sys = next((s for s in systems if s.get("system_name") == target_system_name), None)
-        
-        if not target_sys:
-            return f"❌ 系统 '{target_system_name}' 不存在，请通过「系统列表」确认支持的系统名称。"
+        if not target_sys: return f"❌ 系统 '{target_system_name}' 不存在，请通过「系统列表」确认支持的系统名称。"
         
         sys_id = target_sys.get("id")
-        
-        # 核心改动：获取整个鉴权字典（包含 token, app_code 等）
         auth_data = api_get_system_token(sys_id)
-        if not auth_data:
-            return f"❌ 系统 '{target_system_name}' 切换失败：无法获取系统的访问凭证，请联系管理员。"
+        if not auth_data: return f"❌ 系统 '{target_system_name}' 切换失败：无法获取系统的访问凭证，请联系管理员。"
             
         api_list = api_get_registry(sys_id)
-        
         ctx["system_name"] = target_system_name
         ctx["system_id"] = sys_id
-        ctx["system_auth_headers"] = auth_data  # 存入整个字典
+        ctx["system_auth_headers"] = auth_data  
         ctx["api_registry"] = api_list 
         save_session(user_id, ctx)
         return f"✅ 成功切换至 **{target_system_name}** 环境，系统鉴权已通过。\n📚 动态加载了 {len(api_list)} 个可用数据接口。\n\n您现在可以开始查询了，例如：「查询本月的报销单」。"
 
-    # 4. 路由：业务核心查询
     elif any(kw in cmd for kw in ["报表", "数据看板", "BI", "统计", "分析", "查询"]):
         if not ctx.get("initialized"): return "⚠️ 权限未就绪，请先发送「初始化」。"
         
         system = ctx.get("system_name")
-        if not system:
-            return "⚠️ 请先选择要查询的业务系统。您可以输入「系统列表」查看支持的系统，并通过「切换系统 <系统名>」进入。"
-            
-        time_range = ""
-        if any(t in full_text for t in ["月", "周", "天", "日", "昨", "年", "最近", "本期"]): time_range = "指定时间段"
-        else: return "⚠️ 请补充**时间范围**（如：上个月、本周）。"
+        if not system: return "⚠️ 请先选择要查询的业务系统。您可以输入「系统列表」查看支持的系统，并通过「切换系统 <系统名>」进入。"
 
-        # 核心改动：动态组装请求头
-        headers = {
-            "Content-Type": "application/json"
-        }
-        # 将 system-token 接口返回的所有字段（token, app_code等）全量更新到 headers 中
+        start_date, end_date, time_range = parse_time_keywords(full_text)
+        if not start_date: return "⚠️ 请补充明确的**时间范围**（如：本月、上个月、昨天）。"
+
+        headers = {"Content-Type": "application/json"}
         headers.update(ctx.get("system_auth_headers", {}))
         
         metric = ""
         val1, val2 = 0.0, 0.0
         val1_label, val2_label = "", ""
+        api_url = ""
         
         try:
-            # 匹配：部门周期预算 API (GET /asae-e/yearBudget/query)
             if "预算" in full_text: 
                 metric = "部门周期预算"
-                url = "https://e.asagroup.cn/asae-e/yearBudget/query"
-                resp = requests.get(url, headers=headers, params={"method": "ALL", "pageNo": 1, "pageSize": 25}, timeout=10).json()
+                api_url = "https://e.asagroup.cn/asae-e/yearBudget/query"
+                api_params = {"method": "ALL", "pageNo": 1, "pageSize": 25, "startTime": start_date, "endTime": end_date}
+                resp = requests.get(api_url, headers=headers, params=api_params, timeout=10).json()
                 
                 if resp.get("code") == 100000:
                     datas = resp.get("data", {}).get("datas", [])
@@ -272,13 +384,13 @@ def handle(command: str, args: list, **kwargs) -> str:
                     val2 = sum(float(item.get("usedAmount", 0)) for item in datas)
                     val1_label, val2_label = "预算总额 (budgetTotal)", "已用金额 (usedAmount)"
                 else:
-                    return f"❌ 预算接口请求失败：{resp.get('msg')}"
+                    return f"❌ 预算接口业务失败：{resp.get('msg')}"
 
-            # 匹配：报销单列表查询 API (GET /asae-e/bx)
             elif any(kw in full_text for kw in ["报销", "报销单", "费用"]): 
                 metric = "报销单"
-                url = "https://e.asagroup.cn/asae-e/bx"
-                resp = requests.get(url, headers=headers, params={"method": "ALL", "pageNo": 1, "pageSize": 25}, timeout=10).json()
+                api_url = "https://e.asagroup.cn/asae-e/bx"
+                api_params = {"method": "ALL", "pageNo": 1, "pageSize": 25, "createStime": start_date, "createEtime": end_date}
+                resp = requests.get(api_url, headers=headers, params=api_params, timeout=10).json()
                 
                 if resp.get("code") == 100000:
                     datas = resp.get("data", {}).get("datas", [])
@@ -286,26 +398,22 @@ def handle(command: str, args: list, **kwargs) -> str:
                     val2 = sum(float(item.get("waitHxPrice", 0)) for item in datas)
                     val1_label, val2_label = "报销总额 (totalprice)", "未核销金额 (waitHxPrice)"
                 else:
-                    return f"❌ 报销单接口请求失败：{resp.get('msg')}"
+                    return f"❌ 报销单接口业务失败：{resp.get('msg')}"
             else: 
                 return "⚠️ 请补充**查询指标**（如：部门周期预算、报销单）。"
                 
         except Exception as e:
-            print(f"真实 API 异常，启用容灾数据: {e}")
-            if metric == "部门周期预算":
-                val1, val2 = 1127000.00, 1127000.00
-                val1_label, val2_label = "预算总额 (budgetTotal)", "已用金额 (usedAmount)"
-            else:
-                val1, val2 = 45890.50, 12500.00
-                val1_label, val2_label = "报销总额 (totalprice)", "未核销金额 (waitHxPrice)"
+            return f"❌ 业务接口请求发生严重异常，请检查网络或联系管理员排查。详细错误信息：{str(e)}"
 
-        html_content = generate_html_report(system, metric, time_range, val1_label, val1, val2_label, val2)
+        # 生成带有真实 JS Fetch 交互的 HTML
+        html_content = generate_html_report(system, metric, time_range, start_date, end_date, 
+                                            val1_label, val1, val2_label, val2, 
+                                            api_url, ctx.get("system_auth_headers", {}))
+        
         real_preview_url = api_upload_html_to_oss(html_content)
         
         if not real_preview_url:
-            now = datetime.datetime.now()
-            report_id = now.strftime("%Y%m%d%H%M%S") + "_" + uuid.uuid4().hex[:4]
-            real_preview_url = f"https://asa-s-test.oss-cn-beijing.aliyuncs.com/dw/0_other/archive/skills/{now.year}/{now.month}/{report_id}.html"
+             return "❌ 业务数据抓取成功，但渲染报表并上传至 OSS 存储库失败，操作已中止。"
         
         ctx["last_report_url"] = real_preview_url
         ctx["last_report_title"] = f"{system} - {metric} 报表"
@@ -313,29 +421,20 @@ def handle(command: str, args: list, **kwargs) -> str:
 
         return f"""📊 **{ctx["last_report_title"]}**
 
-⏱ 查询范围：{time_range}
+⏱ 查询范围：{time_range} ({start_date} ~ {end_date})
 - {val1_label}：{val1:,.2f}
 - {val2_label}：{val2:,.2f}
 
-🔗 **可视化预览**：[点击查看完整图表]({real_preview_url})
+🔗 **完整可视化报表**：[点击查看并自主筛选]({real_preview_url})
 
-💡 *您可以回复「发布」将此报表固化至系统，或回复「每天上午9点推送」设置定时任务。*"""
+💡 *您可以回复「发布」将此快照固化至系统。*"""
 
-    # 5. 路由：发布流程
     elif any(kw in cmd for kw in ["发布", "保存"]):
         if not ctx.get("initialized"): return "⚠️ 请先发送「初始化」。"
         if not ctx.get("last_report_url"): return "⚠️ 当前没有可发布的报表，请先查询生成一份报表。"
         
         publish_url = ctx.get("last_report_url").replace(".html", "_published.html")
-        return f"✅ **发布成功**\n\n报表《{ctx.get('last_report_title')}》已持久化保存至胜算平台。\n🔗 正式访问链接：{publish_url}"
-
-    # 6. 路由：定时任务流程
-    elif any(kw in full_text for kw in ["定时", "每天", "每周", "推送"]):
-        if not ctx.get("initialized"): return "⚠️ 请先发送「初始化」。"
-        if not ctx.get("last_report_url"): return "⚠️ 请先查询生成一份报表，然后再设置定时推送。"
-        
-        task_id = "TASK-" + uuid.uuid4().hex[:8].upper()
-        return f"⏰ **定时任务设置成功**\n\n- 任务 ID: `{task_id}`\n- 推送目标: 当前飞书账号\n- 报表内容: {ctx.get('last_report_title')}\n\n系统将按照您要求的时间频率自动生成最新数据并推送给您。如需取消请回复「取消任务 {task_id}」。"
+        return f"✅ **发布成功**\n\n报表快照《{ctx.get('last_report_title')}》已持久化保存至胜算平台。\n🔗 正式访问链接：{publish_url}"
 
     else:
         return f"收到未识别的指令。您可以尝试发送「初始化」、「查询本月报销单」或「系统列表」。"
