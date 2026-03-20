@@ -25,7 +25,7 @@ import requests
 
 # ==================== 常量 ====================
 DEFAULT_OSS_STATIC_DOMAIN = "https://jindengta-archive.oss-cn-beijing.aliyuncs.com/theme/web/bi"
-PUBLISH_API = "https://bi-api.jindengta.cn/supply-chain/api/skills/archive/push"
+PUBLISH_API = "https://bi-api.jindengta.com/dw/api/skills/archive/push"
 
 # ==================== 多用户状态隔离 ====================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -201,7 +201,7 @@ def api_get_supported_systems(auth_pwd: str) -> tuple:
     """
     try:
         resp = requests.get(
-            "https://bi-api.jindengta.cn/supply-chain/api/auth/supported-systems",
+            "https://bi-api.jindengta.com/dw/api/auth/supported-systems",
             headers={"auth": auth_pwd}, timeout=5
         ).json()
         if resp.get("code") == 100000:
@@ -219,7 +219,7 @@ def api_get_supported_systems(auth_pwd: str) -> tuple:
 def api_get_registry(system_id: int, auth_pwd: str) -> list:
     try:
         resp = requests.get(
-            f"https://bi-api.jindengta.cn/supply-chain/api/system/api-registry?system_id={system_id}",
+            f"https://bi-api.jindengta.com/dw/api/system/api-registry?system_id={system_id}",
             headers={"auth": auth_pwd}, timeout=5
         ).json()
         if resp.get("code") == 100000:
@@ -232,7 +232,7 @@ def api_get_system_token(system_id: int, auth_pwd: str) -> tuple:
     """返回 (auth_headers_dict, expires_at_str | None)"""
     try:
         resp = requests.get(
-            f"https://bi-api.jindengta.cn/supply-chain/api/auth/system-token?system_id={system_id}",
+            f"https://bi-api.jindengta.com/dw/api/auth/system-token?system_id={system_id}",
             headers={"auth": auth_pwd}, timeout=5
         ).json()
         if resp.get("code") == 100000:
@@ -301,7 +301,7 @@ def api_upload_html_to_oss(html_content: str, auth_pwd: str, oss_api: str,
     safe_sys = "".join(c for c in system_name if c.isalnum() or c in ("-", "_"))
     safe_rpt = "".join(c for c in report_name if c.isalnum() or c in ("-", "_"))
     filename = f"{safe_sys}_{safe_rpt}_{ts}.html"
-    upload_url = oss_api if oss_api else "https://bi-api.jindengta.cn/supply-chain/api/skills/archive/upload"
+    upload_url = oss_api if oss_api else "https://bi-api.jindengta.com/dw/api/skills/archive/upload"
     try:
         resp = requests.post(
             upload_url,

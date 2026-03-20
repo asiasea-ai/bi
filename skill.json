@@ -6,11 +6,11 @@
   "language": "python",
   "entry": "main.py",
   "api_dependencies": [
-    "GET  https://bi-api.jindengta.cn/supply-chain/api/auth/supported-systems",
-    "GET  https://bi-api.jindengta.cn/supply-chain/api/auth/system-token?system_id={id}",
-    "GET  https://bi-api.jindengta.cn/supply-chain/api/system/api-registry?system_id={id}",
-    "POST https://bi-api.jindengta.cn/supply-chain/api/skills/archive/upload",
-    "POST https://bi-api.jindengta.cn/supply-chain/api/skills/archive/push"
+    "GET  https://bi-api.jindengta.com/dw/api/auth/supported-systems",
+    "GET  https://bi-api.jindengta.com/dw/api/auth/system-token?system_id={id}",
+    "GET  https://bi-api.jindengta.com/dw/api/system/api-registry?system_id={id}",
+    "POST https://bi-api.jindengta.com/dw/api/skills/archive/upload",
+    "POST https://bi-api.jindengta.com/dw/api/skills/archive/push"
   ],
   "session_fields": {
     "auth_password": "网关鉴权密码（持久化）",
